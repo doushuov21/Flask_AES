@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+    <div class="card">
+        <div class="card-header">
+            <h3>编辑用户组</h3>
+        </div>
+        <div class="card-body">
+            <form method="POST">
+                <div class="mb-3">
+                    <label for="name" class="form-label">组名</label>
+                    <input type="text" class="form-control" id="name" name="name" value="{{ group.name }}" required>
+                </div>
+                <div class="mb-3">
+                    <label for="description" class="form-label">描述</label>
+                    <textarea class="form-control" id="description" name="description" rows="3">{{ group.description }}</textarea>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">权限</label>
+                    <div class="row">
+                        {% for permission in permissions %}
+                        <div class="col-md-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="permissions" 
+                                       value="{{ permission.value }}" id="{{ permission.value }}"
+                                       {% if permission.value in group.permission_names %}checked{% endif %}>
+                                <label class="form-check-label" for="{{ permission.value }}">
+                                    {{ permission.value }}
+                                </label>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary">保存更改</button>
+                <a href="{{ url_for('user.group_list') }}" class="btn btn-secondary">返回</a>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %} 

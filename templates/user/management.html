@@ -1,0 +1,306 @@
+{% extends "base.html" %}
+
+{% block title %}用户管理{% endblock %}
+
+{% block style %}
+.main-container {
+    max-width: 1200px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+}
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: white;
+    border-radius: 0.5rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+.nav-tabs {
+    border-bottom: none;
+    background: white;
+    padding: 0.5rem 0.5rem 0;
+    border-radius: 0.5rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+.nav-tabs .nav-link {
+    border: none;
+    color: #6c757d;
+    padding: 0.75rem 1.5rem;
+    border-radius: 0.5rem;
+    margin-right: 0.5rem;
+}
+.nav-tabs .nav-link.active {
+    background-color: #007bff;
+    color: white;
+}
+.tab-content {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 0.5rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin-top: 1rem;
+}
+.card {
+    border: none;
+    box-shadow: none;
+}
+.card-header {
+    background: none;
+    padding: 1rem 0;
+    border-bottom: 2px solid #f0f0f0;
+}
+.table {
+    margin-bottom: 0;
+}
+.table th {
+    border-top: none;
+    background-color: #f8f9fa;
+}
+.badge {
+    font-weight: normal;
+    padding: 0.5em 0.8em;
+}
+.btn-action {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.875rem;
+}
+.back-button {
+    margin-bottom: 1rem;
+}
+{% endblock %}
+
+{% block content %}
+<div class="main-container">
+    <div class="page-header">
+        <h4 class="mb-0">系统管理</h4>
+        <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-primary">返回主页</a>
+    </div>
+
+    <ul class="nav nav-tabs mb-4" role="tablist">
+        <li class="nav-item">
+            <a class="nav-link active" data-bs-toggle="tab" href="#users">用户管理</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" data-bs-toggle="tab" href="#groups">用户组管理</a>
+        </li>
+    </ul>
+
+    <div class="tab-content">
+        <!-- 用户管理标签页 -->
+        <div class="tab-pane fade show active" id="users">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">用户列表</h5>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addUserModal">
+                    <i class="bi bi-plus"></i> 添加用户
+                </button>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>用户名</th>
+                            <th>邮箱</th>
+                            <th>角色</th>
+                            <th>所属用户组</th>
+                            <th>创建时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in users %}
+                        <tr>
+                            <td>{{ user.username }}</td>
+                            <td>{{ user.email }}</td>
+                            <td><span class="badge bg-info">{{ user.role }}</span></td>
+                            <td>
+                                {% for group in user.groups %}
+                                    <span class="badge bg-secondary">{{ group.name }}</span>
+                                {% endfor %}
+                            </td>
+                            <td>{{ user.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary btn-action" onclick="editUser({{ user.id }})">编辑</button>
+                                <button class="btn btn-sm btn-outline-danger btn-action" onclick="deleteUser({{ user.id }})">删除</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 用户组管理标签页 -->
+        <div class="tab-pane fade" id="groups">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">用户组列表</h5>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addGroupModal">
+                    <i class="bi bi-plus"></i> 添加用户组
+                </button>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>组名</th>
+                            <th>描述</th>
+                            <th>权限</th>
+                            <th>创建时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for group in groups %}
+                        <tr>
+                            <td>{{ group.name }}</td>
+                            <td>{{ group.description }}</td>
+                            <td>
+                                {% for permission in group.get_permissions() %}
+                                    <span class="badge bg-info">{{ permission.value }}</span>
+                                {% endfor %}
+                            </td>
+                            <td>{{ group.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary btn-action" onclick="editGroup({{ group.id }})">编辑</button>
+                                <button class="btn btn-sm btn-outline-danger btn-action" onclick="deleteGroup({{ group.id }})">删除</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 添加用户模态框 -->
+<div class="modal fade" id="addUserModal">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">添加用户</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addUserForm" action="{{ url_for('user.create_user') }}" method="post">
+                    <div class="mb-3">
+                        <label class="form-label">用户名</label>
+                        <input type="text" class="form-control" name="username" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">邮箱</label>
+                        <input type="email" class="form-control" name="email" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">密码</label>
+                        <input type="password" class="form-control" name="password" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">角色</label>
+                        <select class="form-control" name="role" required>
+                            {% for role in roles %}
+                            <option value="{{ role.value }}">{{ role.value }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">用户组</label>
+                        <select class="form-control" name="groups" multiple>
+                            {% for group in groups %}
+                            <option value="{{ group.id }}">{{ group.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="submit" form="addUserForm" class="btn btn-primary">添加</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 添加用户组模态框 -->
+<div class="modal fade" id="addGroupModal">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">添加用户组</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addGroupForm" action="{{ url_for('user.create_group') }}" method="post">
+                    <div class="mb-3">
+                        <label class="form-label">组名</label>
+                        <input type="text" class="form-control" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">描述</label>
+                        <textarea class="form-control" name="description"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">权限</label>
+                        <div class="form-check">
+                            {% for permission in permissions %}
+                            <div>
+                                <input type="checkbox" class="form-check-input" name="permissions" value="{{ permission.value }}" id="perm_{{ permission.value }}">
+                                <label class="form-check-label" for="perm_{{ permission.value }}">{{ permission.value }}</label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="submit" form="addGroupForm" class="btn btn-primary">添加</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block script %}
+function editUser(userId) {
+    window.location.href = "{{ url_for('user.edit_user', user_id=0) }}".replace('0', userId);
+}
+
+function deleteUser(userId) {
+    if (confirm('确定要删除这个用户吗？')) {
+        fetch("{{ url_for('user.delete_user', user_id=0) }}".replace('0', userId), {
+            method: 'DELETE',
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+            } else {
+                location.reload();
+            }
+        });
+    }
+}
+
+function editGroup(groupId) {
+    window.location.href = "{{ url_for('user.edit_group', group_id=0) }}".replace('0', groupId);
+}
+
+function deleteGroup(groupId) {
+    if (confirm('确定要删除这个用户组吗？')) {
+        fetch("{{ url_for('user.delete_group', group_id=0) }}".replace('0', groupId), {
+            method: 'DELETE',
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+            } else {
+                location.reload();
+            }
+        });
+    }
+}
+{% endblock %} 

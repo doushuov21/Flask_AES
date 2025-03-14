@@ -1,0 +1,20 @@
+# 忽略Python编译文件
+__pycache__/
+*.py[cod]
+
+# 忽略虚拟环境
+venv/
+env/
+
+# 忽略IDE配置文件
+.vscode/
+.idea/
+
+# 忽略本地数据库
+instance/
+
+# 忽略日志文件
+*.log
+
+# 忽略测试相关
+tests/

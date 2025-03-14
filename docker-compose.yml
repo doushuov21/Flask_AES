@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    image: flask-aes:latest
+    container_name: flask-aes
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - ENCRYPTION_SUFFIX=aes123
+      - SECRET_KEY=your-secret-key-here
+      - DATABASE_URL=sqlite:///app.db
+      - MAIL_SERVER=smtp.gmail.com
+      - MAIL_PORT=587
+      - MAIL_USE_TLS=True
+      - MAIL_USERNAME=your-email@gmail.com
+      - MAIL_PASSWORD=your-app-password
+      - MAIL_DEFAULT_SENDER=your-email@gmail.com
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - flask-net
+
+networks:
+  flask-net:
+    driver: bridge

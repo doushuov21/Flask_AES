@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>用户组管理</h2>
+        <a href="{{ url_for('user.create_group') }}" class="btn btn-primary">创建用户组</a>
+    </div>
+
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-info">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <div class="card">
+        <div class="card-body">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>组名</th>
+                        <th>描述</th>
+                        <th>权限</th>
+                        <th>用户数量</th>
+                        <th>创建时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for group in groups %}
+                    <tr>
+                        <td>{{ group.name }}</td>
+                        <td>{{ group.description }}</td>
+                        <td>
+                            {% for permission in group.get_permissions() %}
+                                <span class="badge bg-info">{{ permission.value }}</span>
+                            {% endfor %}
+                        </td>
+                        <td>{{ group.users|length }}</td>
+                        <td>{{ group.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                        <td>
+                            <a href="{{ url_for('user.edit_group', group_id=group.id) }}" class="btn btn-sm btn-primary">编辑</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %} 
