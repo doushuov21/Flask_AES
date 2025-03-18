@@ -66,6 +66,7 @@ class Registration(db.Model):
     expire_date = db.Column(db.DateTime, nullable=True)  # 允许为空，用于永久激活状态
     last_modified = db.Column(db.DateTime, nullable=False)
     status = db.Column(db.String(20), nullable=False, default=RegistrationStatus.UNACTIVATED.value)
+    activation_code = db.Column(db.Text, nullable=True)  # 添加激活码字段
 
 class Admin(db.Model):
     id = db.Column(db.Integer, primary_key=True)

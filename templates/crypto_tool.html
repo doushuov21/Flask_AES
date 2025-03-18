@@ -1,61 +1,149 @@
 {% extends "base.html" %}
 
-{% block title %}AES 加密/解密工具{% endblock %}
+{% block title %}加密解密工具 - 授权管理系统{% endblock %}
 
-{% block extra_css %}
+{% block style %}
 <style>
-    .card {
-        margin-bottom: 20px;
-        box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075);
+.copy-btn {
+    transition: all 0.3s ease;
+}
+.copy-btn:active {
+    transform: scale(0.95);
+}
+.copy-btn.copied {
+    background-color: #198754;
+    border-color: #198754;
+    color: white;
+}
+.toast {
+    background-color: #333;
+    color: white;
+    pointer-events: auto;
+    min-width: 200px;
+    opacity: 0;
+    transform: translateY(20px);
+}
+.toast.showing {
+    opacity: 1;
+    transform: translateY(0);
+}
+.toast-container {
+    position: fixed;
+    z-index: 1050;
+    pointer-events: none;
+}
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translate3d(0, 20px, 0);
     }
-    .debug-info {
-        font-family: monospace;
-        white-space: pre-wrap;
-        background-color: #f8f9fa;
-        padding: 10px;
-        border-radius: 4px;
-        margin-top: 10px;
+    to {
+        opacity: 1;
+        transform: translate3d(0, 0, 0);
     }
+}
+.toast.fade-in-up {
+    animation: fadeInUp 0.3s ease-out forwards;
+}
+.form-control, .btn {
+    background-color: #2b3035;
+    border-color: #495057;
+    color: #e9ecef;
+}
+.form-control:focus {
+    background-color: #2b3035;
+    border-color: #0d6efd;
+    color: #e9ecef;
+}
+.card {
+    background-color: #212529;
+    border-color: #495057;
+}
+.card-header {
+    background-color: #2b3035;
+    border-bottom-color: #495057;
+}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-8">
+<div class="toast-container" id="messageToastContainer">
+    <div class="toast" role="alert" aria-live="assertive" aria-atomic="true" id="messageToast">
+        <div class="toast-header">
+            <strong class="me-auto">提示</strong>
+            <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+        <div class="toast-body" id="toastMessage"></div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
         <div class="card">
             <div class="card-header">
-                <h3 class="card-title mb-0">AES 加密/解密工具</h3>
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-lock me-2"></i>加密解密工具
+                </h5>
             </div>
             <div class="card-body">
                 <form id="cryptoForm">
-                    <div class="mb-3">
-                        <label for="action" class="form-label">操作类型</label>
-                        <select class="form-select" id="action" name="action" required>
-                            <option value="encrypt">加密</option>
-                            <option value="decrypt">解密</option>
-                        </select>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">操作类型</label>
+                            <div class="btn-group w-100" role="group">
+                                <input type="radio" class="btn-check" name="operation" id="btnEncrypt" value="encrypt" checked>
+                                <label class="btn btn-outline-primary" for="btnEncrypt">
+                                    <i class="fas fa-lock me-1"></i>加密
+                                </label>
+                                <input type="radio" class="btn-check" name="operation" id="btnDecrypt" value="decrypt">
+                                <label class="btn btn-outline-primary" for="btnDecrypt">
+                                    <i class="fas fa-unlock me-1"></i>解密
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="key" class="form-label">密钥 (32字节)</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="key" required>
+                                <button type="button" class="btn btn-outline-secondary" onclick="replaceLastSix()">
+                                    <i class="fas fa-magic me-1"></i>替换后6位
+                                </button>
+                            </div>
+                            <div class="form-text text-danger" id="keyError" style="display: none;">
+                                密钥长度必须为32字节
+                            </div>
+                        </div>
                     </div>
                     <div class="mb-3">
-                        <label for="data" class="form-label">数据</label>
-                        <textarea class="form-control" id="data" name="data" rows="4" placeholder="请输入要处理的数据..." required></textarea>
+                        <label for="inputText" class="form-label">输入文本</label>
+                        <textarea class="form-control" id="inputText" rows="4" required></textarea>
                     </div>
                     <div class="mb-3">
-                        <label for="key" class="form-label">密钥 (32字节)</label>
-                        <input type="text" class="form-control" id="key" name="key" placeholder="请输入32字节的密钥..." required>
-                        <div class="form-text">密钥长度必须为32字节</div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-play me-1"></i>执行
+                        </button>
                     </div>
-                    <button type="submit" class="btn btn-primary">执行</button>
                 </form>
                 
-                <div id="result" class="mt-4" style="display: none;">
-                    <h4>处理结果</h4>
-                    <div class="debug-info" id="resultText"></div>
-                    <button class="btn btn-secondary mt-2" onclick="copyResult()">复制结果</button>
-                </div>
-                
-                <div id="debugInfo" class="mt-4" style="display: none;">
-                    <h4>调试信息</h4>
-                    <div class="debug-info" id="debugText"></div>
+                <div id="resultSection" style="display: none;">
+                    <hr>
+                    <h6 class="mb-3">处理结果</h6>
+                    <div class="mb-3">
+                        <div class="d-flex align-items-center mb-2">
+                            <textarea class="form-control me-2" id="result" rows="4" readonly></textarea>
+                            <button class="btn btn-outline-secondary copy-btn" onclick="copyResult(event)">
+                                <i class="fas fa-copy"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card bg-dark">
+                        <div class="card-header">
+                            <h6 class="mb-0">调试信息</h6>
+                        </div>
+                        <div class="card-body">
+                            <pre id="debugInfo" class="mb-0" style="color: #e9ecef;"></pre>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -65,46 +153,143 @@
 
 {% block extra_js %}
 <script>
-    document.getElementById('cryptoForm').addEventListener('submit', async function(e) {
-        e.preventDefault();
-        
-        const formData = new FormData(this);
-        const action = formData.get('action');
-        const data = formData.get('data');
-        const key = formData.get('key');
-        
-        try {
-            const response = await fetch('/crypto-tool', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: new URLSearchParams(formData)
-            });
-            
-            const result = await response.json();
-            
-            if (result.success) {
-                document.getElementById('result').style.display = 'block';
-                document.getElementById('resultText').textContent = result.result;
-                
-                document.getElementById('debugInfo').style.display = 'block';
-                document.getElementById('debugText').textContent = JSON.stringify(result.debug_info, null, 2);
-            } else {
-                alert(result.error || '处理失败');
-            }
-        } catch (error) {
-            alert('请求失败: ' + error.message);
-        }
+let messageToast = null;
+let toastTimeout = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    messageToast = new bootstrap.Toast(document.getElementById('messageToast'), {
+        delay: 1500
     });
     
-    function copyResult() {
-        const resultText = document.getElementById('resultText').textContent;
-        navigator.clipboard.writeText(resultText).then(() => {
-            alert('结果已复制到剪贴板');
-        }).catch(err => {
-            alert('复制失败: ' + err);
-        });
+    document.getElementById('cryptoForm').addEventListener('submit', handleSubmit);
+    document.getElementById('key').addEventListener('input', validateKey);
+});
+
+function showMessage(message, event) {
+    const container = document.getElementById('messageToastContainer');
+    const toast = document.getElementById('messageToast');
+    
+    if (toastTimeout) {
+        clearTimeout(toastTimeout);
     }
+    
+    if (event) {
+        const x = event.clientX;
+        const y = event.clientY;
+        container.style.left = (x + 20) + 'px';
+        container.style.top = (y - 20) + 'px';
+    } else {
+        container.style.right = '20px';
+        container.style.top = '20px';
+        container.style.left = 'auto';
+    }
+    
+    document.getElementById('toastMessage').textContent = message;
+    
+    toast.classList.remove('fade-in-up');
+    void toast.offsetWidth;
+    toast.classList.add('fade-in-up');
+    
+    messageToast.show();
+    
+    toastTimeout = setTimeout(() => {
+        messageToast.hide();
+    }, 1500);
+}
+
+function validateKey() {
+    const key = document.getElementById('key').value;
+    const keyError = document.getElementById('keyError');
+    
+    if (key.length !== 32) {
+        keyError.style.display = 'block';
+        return false;
+    }
+    
+    keyError.style.display = 'none';
+    return true;
+}
+
+function replaceLastSix() {
+    const keyInput = document.getElementById('key');
+    const currentKey = keyInput.value;
+    
+    if (currentKey.length >= 6) {
+        keyInput.value = currentKey.slice(0, -6) + 'aes123';
+    } else {
+        keyInput.value = 'aes123';
+    }
+    
+    validateKey();
+}
+
+async function copyResult(event) {
+    const result = document.getElementById('result').value;
+    const btn = event.currentTarget;
+    
+    if (!result) {
+        showMessage('没有可复制的内容', event);
+        return;
+    }
+    
+    try {
+        await navigator.clipboard.writeText(result);
+        btn.classList.add('copied');
+        showMessage('已复制到剪贴板', event);
+        
+        setTimeout(() => {
+            btn.classList.remove('copied');
+        }, 1000);
+    } catch (err) {
+        showMessage('复制失败', event);
+        console.error('复制失败:', err);
+    }
+}
+
+async function handleSubmit(e) {
+    e.preventDefault();
+    
+    if (!validateKey()) {
+        return;
+    }
+    
+    const operation = document.querySelector('input[name="operation"]:checked').value;
+    const key = document.getElementById('key').value;
+    const text = document.getElementById('inputText').value;
+    
+    if (!text) {
+        showMessage('请输入要处理的文本');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/admin/crypto/process', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                operation,
+                key,
+                text
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            showMessage(data.error);
+            return;
+        }
+        
+        document.getElementById('result').value = data.result;
+        document.getElementById('debugInfo').textContent = JSON.stringify(data.debug_info, null, 2);
+        document.getElementById('resultSection').style.display = 'block';
+        
+    } catch (error) {
+        console.error('Error:', error);
+        showMessage('处理失败: ' + error.message);
+    }
+}
 </script>
 {% endblock %} 

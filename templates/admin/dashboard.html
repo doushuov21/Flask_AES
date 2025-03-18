@@ -1,108 +1,160 @@
 {% extends "base.html" %}
 
-{% block title %}管理面板{% endblock %}
+{% block title %}仪表板 - 授权管理系统{% endblock %}
 
 {% block style %}
-.navbar {
-    margin-bottom: 2rem;
+<style>
+.table th {
+    white-space: nowrap;
 }
-.copy-btn {
-    padding: 0.25rem 0.5rem;
-    font-size: 0.875rem;
+.table td {
+    vertical-align: middle;
 }
-.activation-code {
+.code-cell {
     font-family: monospace;
+    word-break: break-all;
+    max-width: 300px;
 }
+.debug-info {
+    font-size: 0.8em;
+    color: #666;
+    margin-top: 5px;
+}
+.toast-container {
+    position: fixed;
+    z-index: 1050;
+    pointer-events: none;
+}
+.toast {
+    background-color: #333;
+    color: white;
+    pointer-events: auto;
+    min-width: 200px;
+    max-width: 300px;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    opacity: 0;
+    transform: translateY(20px);
+    transition: all 0.3s ease-out;
+}
+.toast.showing {
+    opacity: 1;
+    transform: translateY(0);
+}
+.toast-header {
+    background-color: #222;
+    color: white;
+}
+.toast-header .btn-close {
+    filter: invert(1) grayscale(100%) brightness(200%);
+}
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translate3d(0, 20px, 0);
+    }
+    to {
+        opacity: 1;
+        transform: translate3d(0, 0, 0);
+    }
+}
+.toast.fade-in-up {
+    animation: fadeInUp 0.3s ease-out forwards;
+}
+</style>
 {% endblock %}
 
 {% block content %}
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="#">注册管理系统</a>
-        <div class="collapse navbar-collapse">
-            <ul class="navbar-nav me-auto">
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('user.management') }}">用户管理</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#changePasswordModal">修改密码</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('admin.logout') }}">退出</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('admin.api_keys') }}">API Key 管理</a>
-                </li>
-            </ul>
+<!-- 提示消息容器 -->
+<div class="toast-container" id="messageToastContainer">
+    <div class="toast" role="alert" aria-live="assertive" aria-atomic="true" id="messageToast">
+        <div class="toast-header">
+            <strong class="me-auto">提示</strong>
+            <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
         </div>
+        <div class="toast-body" id="toastMessage"></div>
     </div>
-</nav>
+</div>
 
-<div class="container mt-4">
-    <div class="row mb-4">
-        <div class="col">
-            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addRegistrationModal">
-                添加注册信息
-            </button>
-        </div>
-    </div>
-
-    <div class="card">
-        <div class="card-header">
-            注册信息列表
-        </div>
-        <div class="card-body">
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th>项目名称</th>
-                        <th>机器码</th>
-                        <th>激活码</th>
-                        <th>状态</th>
-                        <th>注册时间</th>
-                        <th>过期时间</th>
-                        <th>操作</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for reg in registrations %}
-                    <tr>
-                        <td>{{ reg.project_name }}</td>
-                        <td>
-                            <div class="d-flex align-items-center">
-                                <span class="me-2">{{ reg.key }}</span>
-                                <button class="btn btn-sm btn-outline-secondary copy-btn" data-key="{{ reg.key }}">复制</button>
-                            </div>
-                        </td>
-                        <td>
-                            {% if reg.status != 'unactivated' %}
-                            <div class="input-group">
-                                <input type="text" class="form-control activation-code" 
-                                       id="activation-{{ reg.key }}" readonly>
-                                <button class="btn btn-outline-secondary" 
-                                        onclick="copyActivationCode('{{ reg.key }}')">复制</button>
-                            </div>
-                            {% else %}
-                            <span class="text-muted">未激活</span>
-                            {% endif %}
-                        </td>
-                        <td>{{ reg.status }}</td>
-                        <td>{{ reg.register_time.strftime('%Y-%m-%d %H:%M:%S') }}</td>
-                        <td>{{ reg.expire_date.strftime('%Y-%m-%d %H:%M:%S') if reg.expire_date else '永久' }}</td>
-                        <td>
-                            <button class="btn btn-sm btn-primary" onclick="activateRegistration('{{ reg.key }}')">激活</button>
-                            <button class="btn btn-sm btn-danger" onclick="deleteRegistration('{{ reg.key }}')">删除</button>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-list me-2"></i>注册信息列表
+                </h5>
+                <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addRegistrationModal">
+                    <i class="fas fa-plus me-1"></i>添加注册信息
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>项目名称</th>
+                                <th>机器码</th>
+                                <th>激活码</th>
+                                <th>状态</th>
+                                <th>注册时间</th>
+                                <th>过期时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for reg in registrations %}
+                            <tr>
+                                <td>{{ reg.project_name }}</td>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <div class="code-cell me-2">
+                                            {{ reg.key if reg.key else '未设置' }}
+                                            <div class="debug-info">长度: {{ reg.key|length if reg.key else 0 }}</div>
+                                        </div>
+                                        <button class="btn btn-sm btn-outline-secondary" onclick="copyText('{{ reg.key }}', '机器码', event)">
+                                            <i class="fas fa-copy"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <div class="code-cell me-2">
+                                            {{ reg.activation_code if reg.activation_code else '未激活' }}
+                                            <div class="debug-info">长度: {{ reg.activation_code|length if reg.activation_code else 0 }}</div>
+                                        </div>
+                                        <button class="btn btn-sm btn-outline-secondary" onclick="copyText('{{ reg.activation_code }}', '激活码', event)">
+                                            <i class="fas fa-copy"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="badge {% if reg.status == 'activated' %}bg-success{% elif reg.status == 'expired' %}bg-danger{% else %}bg-warning{% endif %}">
+                                        {{ reg.status }}
+                                    </span>
+                                </td>
+                                <td>{{ reg.register_time.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                <td>{{ reg.expire_date.strftime('%Y-%m-%d %H:%M:%S') if reg.expire_date else '永久' }}</td>
+                                <td>
+                                    <div class="btn-group">
+                                        <button class="btn btn-sm btn-primary" onclick="activateRegistration('{{ reg.key }}')">
+                                            <i class="fas fa-check me-1"></i>激活
+                                        </button>
+                                        <button class="btn btn-sm btn-danger" onclick="deleteRegistration('{{ reg.key }}')">
+                                            <i class="fas fa-trash me-1"></i>删除
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 </div>
 
 <!-- 添加注册信息模态框 -->
-<div class="modal fade" id="addRegistrationModal">
+<div class="modal fade" id="addRegistrationModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
@@ -112,17 +164,13 @@
             <div class="modal-body">
                 <form id="addRegistrationForm">
                     <div class="mb-3">
-                        <label class="form-label">项目名称</label>
-                        <input type="text" class="form-control" name="project_name" required>
+                        <label for="projectName" class="form-label">项目名称</label>
+                        <input type="text" class="form-control" id="projectName" required>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">机器码</label>
-                        <div class="form-text mb-2">32位机器码，不可修改</div>
-                        <div class="input-group">
-                            <input type="text" class="form-control" name="key" required 
-                                   pattern=".{32}" title="机器码必须是32位">
-                            <button class="btn btn-outline-secondary" type="button" onclick="pasteKey()">粘贴</button>
-                        </div>
+                        <label for="machineCode" class="form-label">机器码</label>
+                        <input type="text" class="form-control" id="machineCode" required>
+                        <div class="form-text">必须是32位字符</div>
                     </div>
                 </form>
             </div>
@@ -134,210 +182,191 @@
     </div>
 </div>
 
-<!-- 修改密码模态框 -->
-<div class="modal fade" id="changePasswordModal">
+<!-- 激活模态框 -->
+<div class="modal fade" id="activateModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">修改密码</h5>
+                <h5 class="modal-title">激活注册</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <form id="changePasswordForm">
+                <form id="activateForm">
                     <div class="mb-3">
-                        <label class="form-label">当前密码</label>
-                        <input type="password" class="form-control" name="current_password" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">新密码</label>
-                        <input type="password" class="form-control" name="new_password" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">确认新密码</label>
-                        <input type="password" class="form-control" name="confirm_password" required>
+                        <label for="activateDays" class="form-label">有效期（天）</label>
+                        <input type="number" class="form-control" id="activateDays" value="365">
+                        <div class="form-text">输入-1表示永久激活</div>
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-primary" onclick="changePassword()">修改</button>
+                <button type="button" class="btn btn-primary" onclick="confirmActivation()">激活</button>
             </div>
         </div>
     </div>
 </div>
 {% endblock %}
 
-{% block script %}
-// 页面加载完成后，为已激活的注册获取激活码
+{% block extra_js %}
+<script>
+let currentKey = null;
+let messageToast = null;
+let toastTimeout = null;
+
+// 初始化提示消息
 document.addEventListener('DOMContentLoaded', function() {
-    const activatedRegistrations = document.querySelectorAll('.activation-code');
-    activatedRegistrations.forEach(input => {
-        const key = input.id.replace('activation-', '');
-        generateActivationCode(key);
+    messageToast = new bootstrap.Toast(document.getElementById('messageToast'), {
+        delay: 1500
     });
 });
 
-// 复制注册码
-document.querySelectorAll('.copy-btn').forEach(button => {
-    button.addEventListener('click', function() {
-        const key = this.dataset.key;
-        navigator.clipboard.writeText(key).then(() => {
-            alert('复制成功！');
-        });
-    });
-});
-
-// 粘贴机器码
-function pasteKey() {
-    navigator.clipboard.readText().then(text => {
-        const input = document.querySelector('input[name="key"]');
-        input.value = text;
-    });
+// 显示提示消息
+function showMessage(message, event) {
+    const container = document.getElementById('messageToastContainer');
+    const toast = document.getElementById('messageToast');
+    
+    // 清除之前的超时
+    if (toastTimeout) {
+        clearTimeout(toastTimeout);
+    }
+    
+    // 设置提示框位置
+    if (event) {
+        const x = event.clientX;
+        const y = event.clientY;
+        container.style.left = (x + 20) + 'px';
+        container.style.top = (y - 20) + 'px';
+    } else {
+        container.style.right = '20px';
+        container.style.top = '20px';
+        container.style.left = 'auto';
+    }
+    
+    document.getElementById('toastMessage').textContent = message;
+    
+    // 移除之前的动画类
+    toast.classList.remove('fade-in-up');
+    // 触发重排以重新开始动画
+    void toast.offsetWidth;
+    // 添加动画类
+    toast.classList.add('fade-in-up');
+    
+    messageToast.show();
+    
+    // 1.5秒后自动隐藏
+    toastTimeout = setTimeout(() => {
+        messageToast.hide();
+    }, 1500);
 }
 
-// 添加注册信息
-function addRegistration() {
-    const form = document.getElementById('addRegistrationForm');
-    const formData = new FormData(form);
-    const data = {
-        project_name: formData.get('project_name'),
-        key: formData.get('key')
-    };
-
-    // 验证机器码长度
-    if (data.key.length !== 32) {
-        alert('机器码必须是32位！');
+// 复制文本
+async function copyText(text, type, event) {
+    if (!text) {
+        showMessage(`没有可复制的${type}`);
         return;
     }
+    
+    try {
+        await navigator.clipboard.writeText(text);
+        showMessage(`${type}已复制到剪贴板`, event);
+    } catch (err) {
+        showMessage(`复制${type}失败`, event);
+        console.error('复制失败:', err);
+    }
+}
 
+function addRegistration() {
+    const projectName = document.getElementById('projectName').value;
+    const machineCode = document.getElementById('machineCode').value;
+    
+    if (!machineCode || machineCode.length !== 32) {
+        showMessage('机器码必须是32位字符');
+        return;
+    }
+    
     fetch('/admin/registration', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+            project_name: projectName,
+            key: machineCode
+        })
     })
     .then(response => response.json())
     .then(data => {
         if (data.error) {
-            alert(data.error);
+            showMessage(data.error);
         } else {
-            location.reload();
-        }
-    });
-}
-
-// 生成激活码
-function generateActivationCode(key, days = null) {
-    const data = { key: key };
-    if (days !== null) {
-        data.days = days;
-    }
-    
-    return fetch('/admin/generate-activation-code', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.error) {
-            console.error('生成激活码失败:', data.error);
-            return false;
-        } else {
-            const input = document.getElementById('activation-' + key);
-            if (input) {
-                input.value = data.activation_code;
-            }
-            return true;
+            bootstrap.Modal.getInstance(document.getElementById('addRegistrationModal')).hide();
+            showMessage(data.message);
+            window.location.reload();
         }
     })
     .catch(error => {
-        console.error('生成激活码失败:', error);
-        return false;
+        console.error('Error:', error);
+        showMessage('添加失败: ' + error.message);
     });
 }
 
-// 复制激活码
-function copyActivationCode(key) {
-    const input = document.getElementById('activation-' + key);
-    navigator.clipboard.writeText(input.value).then(() => {
-        alert('激活码已复制！');
-    });
-}
-
-// 激活注册
 function activateRegistration(key) {
-    const days = prompt('请输入有效期天数（-1表示永久有效）：');
-    if (days === null) return;
+    currentKey = key;
+    new bootstrap.Modal(document.getElementById('activateModal')).show();
+}
 
-    fetch('/admin/registration/' + key + '/activate', {
+function confirmActivation() {
+    if (!currentKey) return;
+    
+    const days = parseInt(document.getElementById('activateDays').value);
+    
+    fetch(`/admin/registration/${currentKey}/activate`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ days: parseInt(days) }),
+        body: JSON.stringify({
+            days: days
+        })
     })
     .then(response => response.json())
     .then(data => {
         if (data.error) {
-            alert(data.error);
+            showMessage(data.error);
         } else {
-            // 激活成功后刷新页面，页面加载时会自动获取激活码
-            location.reload();
+            bootstrap.Modal.getInstance(document.getElementById('activateModal')).hide();
+            showMessage('激活成功！');
+            window.location.reload();
         }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showMessage('激活失败');
     });
 }
 
-// 删除注册
 function deleteRegistration(key) {
-    if (!confirm('确定要删除这条注册信息吗？')) return;
-
-    fetch('/admin/registration/' + key, {
-        method: 'DELETE',
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.error) {
-            alert(data.error);
-        } else {
-            location.reload();
-        }
-    });
-}
-
-// 修改密码
-function changePassword() {
-    const form = document.getElementById('changePasswordForm');
-    const formData = new FormData(form);
-    const data = {
-        current_password: formData.get('current_password'),
-        new_password: formData.get('new_password'),
-        confirm_password: formData.get('confirm_password')
-    };
-
-    if (data.new_password !== data.confirm_password) {
-        alert('两次输入的新密码不一致！');
+    if (!confirm('确定要删除这条注册信息吗？')) {
         return;
     }
-
-    fetch('/admin/change-password', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
+    
+    fetch(`/admin/registration/${key}`, {
+        method: 'DELETE'
     })
     .then(response => response.json())
     .then(data => {
         if (data.error) {
-            alert(data.error);
+            showMessage(data.error);
         } else {
-            alert('密码修改成功！');
-            location.reload();
+            showMessage('删除成功');
+            window.location.reload();
         }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showMessage('删除失败');
     });
 }
+</script>
 {% endblock %} 

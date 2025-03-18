@@ -1,201 +1,281 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>API Key 管理</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        .toast-container {
-            position: fixed;
-            z-index: 1050;
-            pointer-events: none; /* 允许点击穿透 */
-            transition: all 0.3s ease; /* 平滑移动效果 */
-        }
-        .toast {
-            pointer-events: auto; /* 恢复 toast 的点击事件 */
-            opacity: 0;
-            transform: translateY(-20px);
-            transition: all 0.3s ease;
-        }
-        .toast.show {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    </style>
-</head>
-<body>
-    <!-- Toast 容器 -->
-    <div class="toast-container"></div>
+{% extends "base.html" %}
 
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="{{ url_for('admin.dashboard') }}">返回管理面板</a>
+{% block title %}API密钥管理 - 授权管理系统{% endblock %}
+
+{% block style %}
+<style>
+.table th {
+    white-space: nowrap;
+}
+.table td {
+    vertical-align: middle;
+}
+.code-cell {
+    font-family: monospace;
+    word-break: break-all;
+    max-width: 300px;
+}
+.toast-container {
+    position: fixed;
+    z-index: 1050;
+    pointer-events: none;
+}
+.toast {
+    background-color: #333;
+    color: white;
+    pointer-events: auto;
+    min-width: 200px;
+    max-width: 300px;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    opacity: 0;
+    transform: translateY(20px);
+    transition: all 0.3s ease-out;
+}
+.toast.showing {
+    opacity: 1;
+    transform: translateY(0);
+}
+.toast-header {
+    background-color: #222;
+    color: white;
+}
+.toast-header .btn-close {
+    filter: invert(1) grayscale(100%) brightness(200%);
+}
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translate3d(0, 20px, 0);
+    }
+    to {
+        opacity: 1;
+        transform: translate3d(0, 0, 0);
+    }
+}
+.toast.fade-in-up {
+    animation: fadeInUp 0.3s ease-out forwards;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- 提示消息容器 -->
+<div class="toast-container" id="messageToastContainer">
+    <div class="toast" role="alert" aria-live="assertive" aria-atomic="true" id="messageToast">
+        <div class="toast-header">
+            <strong class="me-auto">提示</strong>
+            <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
         </div>
-    </nav>
+        <div class="toast-body" id="toastMessage"></div>
+    </div>
+</div>
 
-    <div class="container mt-4">
-        <div class="row mb-4">
-            <div class="col">
-                <h2>API Key 管理</h2>
-                <button class="btn btn-primary" onclick="createApiKey()">
-                    创建新的 API Key
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-key me-2"></i>API密钥管理
+                </h5>
+                <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addApiKeyModal">
+                    <i class="fas fa-plus me-1"></i>添加API密钥
                 </button>
             </div>
-        </div>
-
-        <div class="card">
             <div class="card-body">
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>名称</th>
-                            <th>API Key</th>
-                            <th>创建时间</th>
-                            <th>最后使用</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for key in keys %}
-                        <tr>
-                            <td>{{ key.name }}</td>
-                            <td>
-                                <div class="input-group">
-                                    <input type="text" class="form-control" 
-                                           value="{{ key.key }}" 
-                                           id="key-{{ key.id }}" readonly>
-                                    <button class="btn btn-outline-secondary" 
-                                            onclick="copyKey('{{ key.key }}')">
-                                        复制
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>名称</th>
+                                <th>API密钥</th>
+                                <th>创建时间</th>
+                                <th>最后使用时间</th>
+                                <th>状态</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for key in keys %}
+                            <tr>
+                                <td>{{ key.name }}</td>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <div class="code-cell me-2">
+                                            {{ key.key }}
+                                        </div>
+                                        <button class="btn btn-sm btn-outline-secondary" onclick="copyText('{{ key.key }}', 'API密钥')">
+                                            <i class="fas fa-copy"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                                <td>{{ key.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                <td>{{ key.last_used.strftime('%Y-%m-%d %H:%M:%S') if key.last_used else '从未使用' }}</td>
+                                <td>
+                                    <span class="badge {% if key.is_active %}bg-success{% else %}bg-danger{% endif %}">
+                                        {{ '启用' if key.is_active else '禁用' }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-danger" onclick="deleteApiKey({{ key.id }})">
+                                        <i class="fas fa-trash me-1"></i>删除
                                     </button>
-                                </div>
-                            </td>
-                            <td>{{ key.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
-                            <td>{{ key.last_used.strftime('%Y-%m-%d %H:%M:%S') if key.last_used else '从未使用' }}</td>
-                            <td>
-                                <button class="btn btn-sm btn-danger" 
-                                        onclick="deleteKey({{ key.id }})">删除</button>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
+</div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        let mouseX = 0;
-        let mouseY = 0;
-
-        // 跟踪鼠标位置
-        document.addEventListener('mousemove', (e) => {
-            mouseX = e.clientX;
-            mouseY = e.clientY;
-        });
-
-        // 显示提示信息的函数
-        function showToast(message, type = 'success') {
-            const toastContainer = document.querySelector('.toast-container');
-            
-            // 计算 toast 的位置
-            // 确保 toast 不会超出视窗
-            const padding = 20;
-            const maxX = window.innerWidth - 300 - padding; // 300px 是 toast 的大致宽度
-            const maxY = window.innerHeight - 100 - padding; // 100px 是 toast 的大致高度
-            
-            const posX = Math.min(Math.max(mouseX - 150, padding), maxX); // 居中于鼠标
-            const posY = Math.min(Math.max(mouseY - 50, padding), maxY);
-
-            // 设置容器位置
-            toastContainer.style.left = posX + 'px';
-            toastContainer.style.top = posY + 'px';
-
-            const toastHtml = `
-                <div class="toast align-items-center text-white bg-${type} border-0" role="alert">
-                    <div class="d-flex">
-                        <div class="toast-body">
-                            ${message}
-                        </div>
-                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+<!-- 添加API密钥模态框 -->
+<div class="modal fade" id="addApiKeyModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">添加API密钥</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addApiKeyForm">
+                    <div class="mb-3">
+                        <label for="apiKeyName" class="form-label">名称</label>
+                        <input type="text" class="form-control" id="apiKeyName" required>
                     </div>
-                </div>
-            `;
-            toastContainer.insertAdjacentHTML('beforeend', toastHtml);
-            const toast = toastContainer.lastElementChild;
-            const bsToast = new bootstrap.Toast(toast, { 
-                autohide: true, 
-                delay: 3000
-            });
-            
-            // 添加动画效果
-            requestAnimationFrame(() => {
-                toast.classList.add('show');
-            });
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="addApiKey()">添加</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
 
-            bsToast.show();
-            
-            // 监听隐藏事件
-            toast.addEventListener('hidden.bs.toast', () => {
-                toast.classList.remove('show');
-                setTimeout(() => toast.remove(), 300); // 等待淡出动画完成
-            });
+{% block extra_js %}
+<script>
+let messageToast = null;
+let toastTimeout = null;
+
+// 初始化提示消息
+document.addEventListener('DOMContentLoaded', function() {
+    messageToast = new bootstrap.Toast(document.getElementById('messageToast'), {
+        delay: 1500
+    });
+});
+
+// 显示提示消息
+function showMessage(message, event) {
+    const container = document.getElementById('messageToastContainer');
+    const toast = document.getElementById('messageToast');
+    
+    // 清除之前的超时
+    if (toastTimeout) {
+        clearTimeout(toastTimeout);
+    }
+    
+    // 设置提示框位置
+    if (event) {
+        const x = event.clientX;
+        const y = event.clientY;
+        container.style.left = (x + 20) + 'px';
+        container.style.top = (y - 20) + 'px';
+    } else {
+        container.style.right = '20px';
+        container.style.top = '20px';
+        container.style.left = 'auto';
+    }
+    
+    document.getElementById('toastMessage').textContent = message;
+    
+    // 移除之前的动画类
+    toast.classList.remove('fade-in-up');
+    // 触发重排以重新开始动画
+    void toast.offsetWidth;
+    // 添加动画类
+    toast.classList.add('fade-in-up');
+    
+    messageToast.show();
+    
+    // 1.5秒后自动隐藏
+    toastTimeout = setTimeout(() => {
+        messageToast.hide();
+    }, 1500);
+}
+
+// 复制文本
+async function copyText(text, type, event) {
+    if (!text) {
+        showMessage(`没有可复制的${type}`);
+        return;
+    }
+    
+    try {
+        await navigator.clipboard.writeText(text);
+        showMessage(`${type}已复制到剪贴板`, event);
+    } catch (err) {
+        showMessage(`复制${type}失败`, event);
+        console.error('复制失败:', err);
+    }
+}
+
+function addApiKey() {
+    const name = document.getElementById('apiKeyName').value;
+    
+    if (!name) {
+        showMessage('请输入名称');
+        return;
+    }
+    
+    fetch('/admin/api-keys', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            name: name
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            showMessage(data.error);
+        } else {
+            bootstrap.Modal.getInstance(document.getElementById('addApiKeyModal')).hide();
+            showMessage('创建成功');
+            window.location.reload();
         }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showMessage('创建失败: ' + error.message);
+    });
+}
 
-        function createApiKey() {
-            const name = prompt('请输入 API Key 名称：');
-            if (!name) return;
-
-            fetch('/admin/api-keys', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ name: name }),
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.error) {
-                    showToast(data.error, 'danger');
-                } else {
-                    showToast(`API Key 创建成功：${data.key}\n请保存此密钥，它不会再次显示。`);
-                    setTimeout(() => location.reload(), 3000);
-                }
-            });
+function deleteApiKey(id) {
+    if (!confirm('确定要删除这个API密钥吗？')) {
+        return;
+    }
+    
+    fetch(`/admin/api-keys/${id}`, {
+        method: 'DELETE'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            showMessage(data.error);
+        } else {
+            showMessage('删除成功');
+            window.location.reload();
         }
-
-        function deleteKey(keyId) {
-            if (!confirm('确定要删除这个 API Key 吗？')) return;
-
-            fetch(`/admin/api-keys/${keyId}`, {
-                method: 'DELETE',
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.error) {
-                    showToast(data.error, 'danger');
-                } else {
-                    showToast('API Key 已删除');
-                    setTimeout(() => location.reload(), 3000);
-                }
-            });
-        }
-
-        function copyKey(key) {
-            // 创建一个临时的 textarea 元素
-            const textarea = document.createElement('textarea');
-            textarea.value = key;
-            document.body.appendChild(textarea);
-            
-            // 选择文本并复制
-            textarea.select();
-            document.execCommand('copy');
-            
-            // 移除临时元素
-            document.body.removeChild(textarea);
-            
-            showToast('API Key 已复制！');
-        }
-    </script>
-</body>
-</html> 
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showMessage('删除失败');
+    });
+}
+</script>
+{% endblock %} 

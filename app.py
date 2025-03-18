@@ -72,14 +72,30 @@ app.config['MAIL_PASSWORD'] = 'your-password'  # 替换为你的邮箱密码
 
 mail = Mail(app)
 
-def aes_encrypt(data_str: str, key: str) -> str:
+def aes_encrypt(key: str, data_str: str) -> str:
     """
     通用AES加密方法
-    :param data_str: 要加密的字符串
     :param key: 32字节密钥
+    :param data_str: 要加密的字符串
     :return: Base64编码的加密数据
     """
-    return test_aes_encryption(key, data_str)
+    try:
+        # 1. UTF-8编码
+        data_bytes = data_str.encode('utf-8')
+        
+        # 2. PKCS7填充
+        padded_data = pad(data_bytes, AES.block_size)
+        
+        # 3. AES-ECB加密
+        cipher = AES.new(key.encode('utf-8'), AES.MODE_ECB)
+        encrypted_data = cipher.encrypt(padded_data)
+        
+        # 4. Base64编码
+        encoded_data = base64.b64encode(encrypted_data).decode('utf-8')
+        
+        return encoded_data
+    except Exception as e:
+        raise Exception(f"加密失败: {str(e)}")
 
 def aes_decrypt(encrypted_data: str, key: str) -> str:
     """
@@ -88,7 +104,23 @@ def aes_decrypt(encrypted_data: str, key: str) -> str:
     :param key: 32字节密钥
     :return: 解密后的字符串
     """
-    return test_aes_decryption(encrypted_data, key)
+    try:
+        # 1. Base64解码
+        encrypted_bytes = base64.b64decode(encrypted_data)
+        
+        # 2. AES-ECB解密
+        cipher = AES.new(key.encode('utf-8'), AES.MODE_ECB)
+        decrypted_padded = cipher.decrypt(encrypted_bytes)
+        
+        # 3. 去除PKCS7填充
+        decrypted_data = unpad(decrypted_padded, AES.block_size)
+        
+        # 4. UTF-8解码
+        result = decrypted_data.decode('utf-8')
+        
+        return result
+    except Exception as e:
+        raise Exception(f"解密失败: {str(e)}")
 
 def test_aes_encryption(key: str, test_str: str) -> str:
     """测试 AES 加密过程"""
@@ -198,7 +230,7 @@ def register():
         encryption_key = key[:-6] + current_app.config['ENCRYPTION_SUFFIX']
         
         # 加密数据
-        encoded_data = aes_encrypt(response_str, encryption_key)
+        encoded_data = aes_encrypt(encryption_key, response_str)
         
         return jsonify({
             'message': '注册成功，等待激活',
@@ -232,7 +264,7 @@ def generate_activation_code():
         current_app.logger.info(f"3. 加密密钥: {encryption_key}")
         
         # 加密数据
-        encoded_data = aes_encrypt(test_str, encryption_key)
+        encoded_data = aes_encrypt(encryption_key, test_str)
         current_app.logger.info(f"4. 加密结果: {encoded_data}")
         current_app.logger.info("=== 调试信息结束 ===\n")
         
@@ -266,7 +298,7 @@ def test_encryption(key, value):
     current_app.logger.info(f"3. 加密密钥: {encryption_key}")
     
     # 加密数据
-    encoded_data = aes_encrypt(test_str, encryption_key)
+    encoded_data = aes_encrypt(encryption_key, test_str)
     current_app.logger.info(f"4. 加密结果: {encoded_data}")
     current_app.logger.info("=== 调试信息结束 ===\n")
     
@@ -319,7 +351,6 @@ def activate():
             registration.status = RegistrationStatus.ACTIVATED.value
             
         registration.last_modified = now
-        db.session.commit()
         
         # 准备要加密的数据 - 使用完全相同的字符串格式
         expire_date = registration.expire_date.strftime('%Y-%m-%d %H:%M:%S') if registration.expire_date else 'permanent'
@@ -329,7 +360,11 @@ def activate():
         encryption_key = key[:-6] + current_app.config['ENCRYPTION_SUFFIX']
         
         # 加密数据
-        encoded_data = aes_encrypt(response_str, encryption_key)
+        encoded_data = aes_encrypt(encryption_key, response_str)
+        
+        # 保存激活码到数据库
+        registration.activation_code = encoded_data
+        db.session.commit()
         
         return jsonify({
             'message': '激活成功',
@@ -392,7 +427,7 @@ def verify():
             response_str = "{'project_name': '" + registration.project_name + "', 'register_time': '" + registration.register_time.strftime('%Y-%m-%d %H:%M:%S') + "', 'status': '" + registration.status + "', 'message': '未注册，已自动注册，等待激活'}"
             
             encryption_key = key[:-6] + current_app.config['ENCRYPTION_SUFFIX']
-            encoded_data = aes_encrypt(response_str, encryption_key)
+            encoded_data = aes_encrypt(encryption_key, response_str)
             
             return jsonify({
                 'message': '未注册，已自动注册，等待激活',
@@ -405,7 +440,7 @@ def verify():
             response_str = "{'project_name': '" + registration.project_name + "', 'register_time': '" + registration.register_time.strftime('%Y-%m-%d %H:%M:%S') + "', 'status': '" + registration.status + "', 'message': '已注册，等待激活'}"
             
             encryption_key = key[:-6] + current_app.config['ENCRYPTION_SUFFIX']
-            encoded_data = aes_encrypt(response_str, encryption_key)
+            encoded_data = aes_encrypt(encryption_key, response_str)
             
             return jsonify({
                 'message': '已注册，等待激活',
@@ -425,7 +460,7 @@ def verify():
         response_str = "{'project_name': '" + registration.project_name + "', 'status': '" + registration.status + "', 'expire_date': '" + expire_date + "', 'message': '验证成功'}"
         
         encryption_key = key[:-6] + current_app.config['ENCRYPTION_SUFFIX']
-        encoded_data = aes_encrypt(response_str, encryption_key)
+        encoded_data = aes_encrypt(encryption_key, response_str)
         
         return jsonify({
             'message': '验证成功',
@@ -494,7 +529,7 @@ def create_admin():
         random_password = ''.join(secrets.choice('0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$%^&*()') for _ in range(16))
         
         admin = Admin(
-            username='',  # 用户名留空，等待用户首次设置
+            username='admin',  # 默认用户名为 admin
             email='admin@example.com',
             role=UserRole.SUPER_ADMIN.value,
             is_first_login=True  # 设置为首次登录
@@ -505,9 +540,10 @@ def create_admin():
         
         # 在控制台显示初始密码
         print("\n" + "="*50)
-        print("首次启动：请设置管理员账号")
+        print("首次启动：系统已创建默认管理员账号")
+        print("用户名: admin")
         print(f"临时密码: {random_password}")
-        print("请使用此临时密码登录并设置您的用户名和新密码")
+        print("请使用此临时密码登录并修改密码")
         print("="*50 + "\n")
 
 @app.route('/forgot-password', methods=['GET', 'POST'])
@@ -612,35 +648,6 @@ def change_password():
         'redirect_url': url_for('admin.login')
     })
 
-def test_aes_decryption(encoded_data, key):
-    """测试 AES 解密过程"""
-    print("\n=== AES解密过程详细信息 ===")
-    print("1. 加密密钥:", key)
-    print("2. Base64编码数据:", encoded_data)
-    
-    # 1. Base64解码
-    encrypted_bytes = base64.b64decode(encoded_data)
-    print("3. Base64解码:", encrypted_bytes)
-    
-    # 2. AES-ECB解密
-    cipher = AES.new(key.encode('utf-8'), AES.MODE_ECB)
-    decrypted_data = cipher.decrypt(encrypted_bytes)
-    print("4. 解密后数据:", decrypted_data)
-    
-    # 3. 移除填充并转换为字符串
-    # 找到第一个null字节的位置
-    try:
-        null_pos = decrypted_data.index(b'\0'[0])
-        result = decrypted_data[:null_pos].decode('utf-8')
-    except ValueError:
-        # 如果没有找到null字节，使用全部数据
-        result = decrypted_data.decode('utf-8')
-    
-    print("5. 解密后字符串:", result)
-    print("=== 解密过程结束 ===\n")
-    
-    return result
-
 @app.route('/crypto-tool', methods=['GET', 'POST'])
 def crypto_tool():
     """加密解密工具页面"""
@@ -655,7 +662,7 @@ def crypto_tool():
                 
             if action == 'encrypt':
                 # 加密过程
-                result = aes_encrypt(data, key)
+                result = aes_encrypt(key, data)
                 return jsonify({
                     'success': True,
                     'result': result,
@@ -685,14 +692,103 @@ def crypto_tool():
             
     return render_template('crypto_tool.html')
 
+@app.route('/admin/login', methods=['GET', 'POST'])
+def admin_login():
+    if request.method == 'POST':
+        try:
+            data = request.get_json()
+            username = data.get('username', 'admin')  # 默认用户名为 admin
+            password = data.get('password')
+            
+            if not password:
+                return jsonify({'error': '请输入密码'}), 400
+            
+            # 尝试查找用户
+            admin = Admin.query.filter(
+                (Admin.username == username) | (Admin.email == username)
+            ).first()
+            
+            if not admin:
+                return jsonify({'error': '用户不存在'}), 401
+            
+            # 验证密码
+            if not admin.check_password(password):
+                return jsonify({'error': '密码错误'}), 401
+            
+            # 登录成功，设置session
+            session['admin_id'] = admin.id
+            session['password_version'] = admin.password_version
+            
+            if admin.is_first_login:
+                return jsonify({
+                    'redirect_url': url_for('change_password'),
+                    'message': '首次登录，请修改密码'
+                })
+            
+            return jsonify({
+                'redirect_url': url_for('admin.dashboard'),
+                'message': '登录成功'
+            })
+            
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    return render_template('admin/login.html')
+
+@app.route('/admin/crypto/process', methods=['POST'])
+@login_required
+def process_crypto():
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': '无效的请求数据'}), 400
+            
+        operation = data.get('operation')
+        text = data.get('text')  # 前端发送的是text
+        key = data.get('key')
+        
+        if not all([operation, text, key]):
+            return jsonify({'error': '缺少必要参数'}), 400
+            
+        if len(key) != 32:
+            return jsonify({'error': '密钥长度必须为32字节'}), 400
+            
+        if operation == 'encrypt':
+            result = aes_encrypt(key, text)  # 修正参数顺序
+            return jsonify({
+                'result': result,
+                'debug_info': {
+                    'operation': '加密',
+                    'input_text': text,
+                    'key_length': len(key),
+                    'output_length': len(result) if result else 0
+                }
+            })
+        elif operation == 'decrypt':
+            result = aes_decrypt(text, key)  # text是加密后的数据
+            return jsonify({
+                'result': result,
+                'debug_info': {
+                    'operation': '解密',
+                    'input_text': text,
+                    'key_length': len(key),
+                    'output_length': len(result) if result else 0
+                }
+            })
+        else:
+            return jsonify({'error': '不支持的操作类型'}), 400
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     # 运行加密测试
-    key = "f87bc021421baf2374bfc78300aes123"  # 32字节密钥
-    test_str = "{'expire_date': '2025-03-19 13:37:56', 'message': '激活成功', 'project_name': 'pc1', 'status': 'activated'}"
-    encoded = test_aes_encryption(key, test_str)
+    # key = "f87bc021421baf2374bfc78300aes123"  # 32字节密钥
+    # test_str = "{'expire_date': '2025-03-19 13:37:56', 'message': '激活成功', 'project_name': 'pc1', 'status': 'activated'}"
+    # encoded = test_aes_encryption(key, test_str)
     
-    # 运行解密测试
-    decoded = test_aes_decryption(encoded, key)
+    # # 运行解密测试
+    # decoded = test_aes_decryption(encoded, key)
     
     # 启动应用
     with app.app_context():

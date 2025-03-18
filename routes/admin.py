@@ -24,41 +24,76 @@ def login():
     if request.method == 'GET':
         return render_template('admin/login.html')
     
-    data = request.form
-    username = data.get('username')
-    password = data.get('password')
-    
-    # 处理首次登录的情况（空用户名）
-    if not username:
-        # 查找没有用户名的管理员账号
-        admin = Admin.query.filter_by(username='').first()
-        if admin and admin.check_password(password):
-            session['admin_id'] = admin.id
-            session['password_version'] = admin.password_version
-            admin.last_login = datetime.now()
-            db.session.commit()
-            return redirect(url_for('admin.change_password'))
-    else:
-        # 正常登录流程
-        admin = Admin.query.filter_by(username=username).first()
-        if admin and admin.check_password(password):
-            session['admin_id'] = admin.id
-            session['password_version'] = admin.password_version
-            admin.last_login = datetime.now()
-            db.session.commit()
-            
-            if admin.is_first_login:
-                return redirect(url_for('admin.change_password'))
-            
-            return redirect(url_for('admin.dashboard'))
-    
-    flash('用户名或密码错误', 'error')
-    return redirect(url_for('admin.login'))
+    try:
+        data = request.get_json()
+        username = data.get('username', 'admin')  # 默认用户名为 admin
+        password = data.get('password')
+        
+        if not password:
+            return jsonify({'error': '请输入密码'}), 400
+        
+        # 尝试查找用户
+        admin = Admin.query.filter(
+            (Admin.username == username) | (Admin.email == username)
+        ).first()
+        
+        if not admin:
+            # 如果用户不存在且是首次登录，创建默认管理员账号
+            if Admin.query.count() == 0:
+                # 生成16位随机密码
+                temp_password = ''.join(secrets.choice('0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$%^&*()') for _ in range(16))
+                
+                admin = Admin(
+                    username='admin',
+                    email='admin@example.com',
+                    is_first_login=True
+                )
+                admin.set_password(temp_password)
+                db.session.add(admin)
+                db.session.commit()
+                
+                return jsonify({
+                    'message': '首次登录，已创建临时密码',
+                    'temp_password': temp_password
+                })
+            return jsonify({'error': '用户不存在'}), 401
+        
+        # 验证密码
+        if not admin.check_password(password):
+            return jsonify({'error': '密码错误'}), 401
+        
+        # 登录成功，设置session
+        session['admin_id'] = admin.id
+        session['password_version'] = admin.password_version
+        admin.last_login = datetime.now()
+        db.session.commit()
+        
+        if admin.is_first_login:
+            return jsonify({
+                'redirect_url': url_for('admin.change_password'),
+                'message': '首次登录，请修改密码'
+            })
+        
+        return jsonify({
+            'redirect_url': url_for('admin.dashboard'),
+            'message': '登录成功'
+        })
+        
+    except Exception as e:
+        current_app.logger.error(f"Login error: {str(e)}")
+        return jsonify({'error': '服务器错误'}), 500
 
 @admin_bp.route('/dashboard')
 @login_required
 def dashboard():
-    registrations = Registration.query.all()
+    # 获取所有注册信息，按注册时间倒序排列
+    registrations = Registration.query.order_by(Registration.register_time.desc()).all()
+    
+    # 添加调试日志
+    current_app.logger.info(f"Found {len(registrations)} registrations")
+    for reg in registrations:
+        current_app.logger.info(f"Registration: key={reg.key}, project={reg.project_name}, status={reg.status}, activation_code={reg.activation_code}")
+    
     return render_template('admin/dashboard.html', registrations=registrations)
 
 @admin_bp.route('/logout')
@@ -151,17 +186,49 @@ def activate_registration(key):
     if not registration:
         return jsonify({'error': '未找到注册信息'}), 404
     
+    now = datetime.now()
+    
     if days == -1:
         registration.status = RegistrationStatus.PERMANENT.value
         registration.expire_date = None
     else:
         registration.status = RegistrationStatus.ACTIVATED.value
-        registration.expire_date = datetime.now() + timedelta(days=days)
+        registration.expire_date = now + timedelta(days=days)
     
-    registration.last_modified = datetime.now()
-    db.session.commit()
+    registration.last_modified = now
     
-    return jsonify({'message': '激活成功'})
+    # 准备要加密的数据
+    expire_date = registration.expire_date.strftime('%Y-%m-%d %H:%M:%S') if registration.expire_date else 'permanent'
+    response_str = "{'project_name': '" + registration.project_name + "', 'status': '" + registration.status + "', 'expire_date': '" + expire_date + "', 'message': '激活成功'}"
+    
+    # 使用配置的6位后缀替换机器码后6位
+    encryption_key = key[:-6] + current_app.config['ENCRYPTION_SUFFIX']
+    
+    try:
+        # 加密数据
+        cipher = AES.new(encryption_key.encode('utf-8'), AES.MODE_ECB)
+        padded_data = pad(response_str.encode('utf-8'), AES.block_size)
+        encrypted_data = cipher.encrypt(padded_data)
+        encoded_data = base64.b64encode(encrypted_data).decode('utf-8')
+        
+        # 保存激活码到数据库
+        registration.activation_code = encoded_data
+        
+        # 添加调试日志
+        current_app.logger.info(f"Activating registration: key={key}")
+        current_app.logger.info(f"Generated activation code: {encoded_data}")
+        
+        db.session.commit()
+        
+        # 返回激活码
+        return jsonify({
+            'message': '激活成功',
+            'activation_code': encoded_data
+        })
+        
+    except Exception as e:
+        current_app.logger.error(f"激活失败: {str(e)}")
+        return jsonify({'error': f'激活失败: {str(e)}'}), 500
 
 @admin_bp.route('/registration/<key>', methods=['DELETE'])
 @login_required
