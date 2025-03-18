@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}AES 加密/解密工具{% endblock %}
+
+{% block extra_css %}
+<style>
+    .card {
+        margin-bottom: 20px;
+        box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075);
+    }
+    .debug-info {
+        font-family: monospace;
+        white-space: pre-wrap;
+        background-color: #f8f9fa;
+        padding: 10px;
+        border-radius: 4px;
+        margin-top: 10px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title mb-0">AES 加密/解密工具</h3>
+            </div>
+            <div class="card-body">
+                <form id="cryptoForm">
+                    <div class="mb-3">
+                        <label for="action" class="form-label">操作类型</label>
+                        <select class="form-select" id="action" name="action" required>
+                            <option value="encrypt">加密</option>
+                            <option value="decrypt">解密</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="data" class="form-label">数据</label>
+                        <textarea class="form-control" id="data" name="data" rows="4" placeholder="请输入要处理的数据..." required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="key" class="form-label">密钥 (32字节)</label>
+                        <input type="text" class="form-control" id="key" name="key" placeholder="请输入32字节的密钥..." required>
+                        <div class="form-text">密钥长度必须为32字节</div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">执行</button>
+                </form>
+                
+                <div id="result" class="mt-4" style="display: none;">
+                    <h4>处理结果</h4>
+                    <div class="debug-info" id="resultText"></div>
+                    <button class="btn btn-secondary mt-2" onclick="copyResult()">复制结果</button>
+                </div>
+                
+                <div id="debugInfo" class="mt-4" style="display: none;">
+                    <h4>调试信息</h4>
+                    <div class="debug-info" id="debugText"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.getElementById('cryptoForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const formData = new FormData(this);
+        const action = formData.get('action');
+        const data = formData.get('data');
+        const key = formData.get('key');
+        
+        try {
+            const response = await fetch('/crypto-tool', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams(formData)
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                document.getElementById('result').style.display = 'block';
+                document.getElementById('resultText').textContent = result.result;
+                
+                document.getElementById('debugInfo').style.display = 'block';
+                document.getElementById('debugText').textContent = JSON.stringify(result.debug_info, null, 2);
+            } else {
+                alert(result.error || '处理失败');
+            }
+        } catch (error) {
+            alert('请求失败: ' + error.message);
+        }
+    });
+    
+    function copyResult() {
+        const resultText = document.getElementById('resultText').textContent;
+        navigator.clipboard.writeText(resultText).then(() => {
+            alert('结果已复制到剪贴板');
+        }).catch(err => {
+            alert('复制失败: ' + err);
+        });
+    }
+</script>
+{% endblock %} 

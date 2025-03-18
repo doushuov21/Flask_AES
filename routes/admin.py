@@ -189,29 +189,30 @@ def generate_activation_code():
     response_data = {
         'project_name': registration.project_name,
         'status': registration.status,
-        'expire_date': registration.expire_date.strftime('%Y-%m-%d %H:%M:%S') if registration.expire_date else 'permanent'
+        'expire_date': registration.expire_date.strftime('%Y-%m-%d %H:%M:%S') if registration.expire_date else 'permanent',
+        'message': '激活成功'
     }
     
     try:
         # 使用配置的6位后缀替换机器码后6位
         encryption_key = key[:-6] + current_app.config['ENCRYPTION_SUFFIX']
         
-        # 使用机器码的前16位作为IV，确保相同机器码生成相同的激活码
-        iv = key[:16].encode()
+        # 使用 ECB 模式创建 cipher
+        cipher = AES.new(encryption_key.encode(), AES.MODE_ECB)
         
-        # 使用CBC模式创建cipher
-        cipher = AES.new(encryption_key.encode(), AES.MODE_CBC, iv)
+        # 将数据转换为JSON字符串
+        data_str = json.dumps(response_data, ensure_ascii=False, separators=(',', ':'))
         
-        # 将数据转换为JSON字符串并填充
-        data_str = json.dumps(response_data, ensure_ascii=False)
-        padded_data = pad(data_str.encode(), AES.block_size)
+        # 计算需要填充的字节数
+        padding_length = AES.block_size - (len(data_str.encode('utf-8')) % AES.block_size)
+        # 使用Zero padding
+        padded_data = data_str.encode('utf-8') + (b'\0' * padding_length)
         
         # 加密数据
         encrypted_data = cipher.encrypt(padded_data)
         
-        # 将IV和加密数据组合，并进行Base64编码
-        combined_data = iv + encrypted_data
-        encoded_data = base64.b64encode(combined_data).decode('utf-8')
+        # Base64编码
+        encoded_data = base64.b64encode(encrypted_data).decode('utf-8')
         
         return jsonify({
             'activation_code': encoded_data

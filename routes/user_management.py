@@ -209,30 +209,24 @@ def decrypt_data():
             return jsonify({'error': '无效的Base64编码'}), 400
 
         # 验证加密数据长度
-        if len(encrypted_bytes) < 16:
-            return jsonify({'error': '加密数据长度不足（至少需要16字节的IV）'}), 400
-
-        # 提取IV（前16字节）和加密数据
-        iv = encrypted_bytes[:16]
-        encrypted_content = encrypted_bytes[16:]
-
-        # 验证加密内容长度
-        if len(encrypted_content) % 16 != 0:
+        if len(encrypted_bytes) % 16 != 0:
             return jsonify({'error': '加密数据长度不是16的倍数'}), 400
 
         try:
             # 使用配置的6位后缀替换机器码后6位
             encryption_key = key[:-6] + current_app.config['ENCRYPTION_SUFFIX']
             
-            # 创建AES解密器
-            cipher = AES.new(encryption_key.encode('utf-8'), AES.MODE_CBC, iv)
+            # 创建AES解密器（ECB模式）
+            cipher = AES.new(encryption_key.encode('utf-8'), AES.MODE_ECB)
             
             # 解密数据
-            decrypted_padded = cipher.decrypt(encrypted_content)
-            decrypted_data = unpad(decrypted_padded, AES.block_size)
+            decrypted_data = cipher.decrypt(encrypted_bytes)
+            
+            # 移除Zero padding
+            unpadded_data = decrypted_data.rstrip(b'\0')
             
             # 将解密后的数据解析为JSON
-            json_data = json.loads(decrypted_data.decode('utf-8'))
+            json_data = json.loads(unpadded_data.decode('utf-8'))
             
             return jsonify({'data': json_data})
         except ValueError as e:
