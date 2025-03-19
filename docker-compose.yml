@@ -9,7 +9,7 @@ services:
     ports:
       - "5000:5000"
     environment:
-      - ENCRYPTION_SUFFIX=aes123
+      - ENCRYPTION_SUFFIX=jkdata
       - SECRET_KEY=your-secret-key-here
       - DATABASE_URL=sqlite:///app.db
       - MAIL_SERVER=smtp.gmail.com

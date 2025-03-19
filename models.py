@@ -62,11 +62,30 @@ class Registration(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     key = db.Column(db.String(32), unique=True, nullable=False)
     project_name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.String(200), nullable=False)  # 项目描述
+    version = db.Column(db.String(50), nullable=False)  # 项目版本
     register_time = db.Column(db.DateTime, nullable=False)
     expire_date = db.Column(db.DateTime, nullable=True)  # 允许为空，用于永久激活状态
     last_modified = db.Column(db.DateTime, nullable=False)
     status = db.Column(db.String(20), nullable=False, default=RegistrationStatus.UNACTIVATED.value)
     activation_code = db.Column(db.Text, nullable=True)  # 添加激活码字段
+
+    def to_dict(self):
+        """将注册信息转换为字典格式"""
+        return {
+            'id': self.id,
+            'key': self.key,
+            'project': {
+                'name': self.project_name,
+                'description': self.description,
+                'version': self.version
+            },
+            'register_time': self.register_time.isoformat(),
+            'expire_date': self.expire_date.isoformat() if self.expire_date else None,
+            'last_modified': self.last_modified.isoformat(),
+            'status': self.status,
+            'activation_code': self.activation_code
+        }
 
 class Admin(db.Model):
     id = db.Column(db.Integer, primary_key=True)

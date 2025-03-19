@@ -9,11 +9,65 @@
 }
 .table td {
     vertical-align: middle;
+    padding: 8px;
 }
 .code-cell {
     font-family: monospace;
     word-break: break-all;
     max-width: 300px;
+    background-color: #f8f9fa;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+.machine-code {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+    display: inline-block;
+}
+.activation-code {
+    max-height: 100px;
+    max-width: 400px;
+    overflow-y: auto;
+    white-space: normal;
+    word-break: break-word;
+    background-color: #ffffff00;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 0.85em;
+    border: 1px solid #e0e0e000;
+    display: inline-block;
+    color: #f3f3f3;
+}
+.des-cell {
+    max-width: 400px;
+    max-height: 100px;
+    overflow: auto;
+    white-space: normal;
+    word-break: break-word;
+    background-color: #ffffff11;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 0.9em;
+    border: 1px solid #e0e0e000;
+    cursor: text;
+    transition: all 0.2s ease;
+    margin: 0;
+    color: #ececec;
+}
+.des-cell:hover {
+    border-color: #80bdff;
+    box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
+}
+.des-cell:focus {
+    outline: none;
+    border-color: #80bdff;
+    box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
+}
+.btn-group {
+    white-space: nowrap;
 }
 .debug-info {
     font-size: 0.8em;
@@ -94,6 +148,7 @@
                                 <th>项目名称</th>
                                 <th>机器码</th>
                                 <th>激活码</th>
+                                <th>des</th>
                                 <th>状态</th>
                                 <th>注册时间</th>
                                 <th>过期时间</th>
@@ -106,7 +161,7 @@
                                 <td>{{ reg.project_name }}</td>
                                 <td>
                                     <div class="d-flex align-items-center">
-                                        <div class="code-cell me-2">
+                                        <div class="machine-code me-2">
                                             {{ reg.key if reg.key else '未设置' }}
                                             <div class="debug-info">长度: {{ reg.key|length if reg.key else 0 }}</div>
                                         </div>
@@ -117,13 +172,26 @@
                                 </td>
                                 <td>
                                     <div class="d-flex align-items-center">
-                                        <div class="code-cell me-2">
+                                        <div class="activation-code me-2">
                                             {{ reg.activation_code if reg.activation_code else '未激活' }}
                                             <div class="debug-info">长度: {{ reg.activation_code|length if reg.activation_code else 0 }}</div>
                                         </div>
                                         <button class="btn btn-sm btn-outline-secondary" onclick="copyText('{{ reg.activation_code }}', '激活码', event)">
                                             <i class="fas fa-copy"></i>
                                         </button>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="des-cell" 
+                                         contenteditable="true" 
+                                         data-key="{{ reg.key }}"
+                                         onblur="updateDescription(this)"
+                                         oninput="this.dataset.modified = 'true'">
+                                        {% if reg.description %}
+                                            {{ reg.description }}
+                                        {% else %}
+                                            未设置
+                                        {% endif %}
                                     </div>
                                 </td>
                                 <td>
@@ -168,6 +236,14 @@
                         <input type="text" class="form-control" id="projectName" required>
                     </div>
                     <div class="mb-3">
+                        <label for="projectDescription" class="form-label">项目描述</label>
+                        <textarea class="form-control" id="projectDescription" rows="3" required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="projectVersion" class="form-label">项目版本</label>
+                        <input type="text" class="form-control" id="projectVersion" value="1.0" required>
+                    </div>
+                    <div class="mb-3">
                         <label for="machineCode" class="form-label">机器码</label>
                         <input type="text" class="form-control" id="machineCode" required>
                         <div class="form-text">必须是32位字符</div>
@@ -197,6 +273,10 @@
                         <input type="number" class="form-control" id="activateDays" value="365">
                         <div class="form-text">输入-1表示永久激活</div>
                     </div>
+                    <div class="mb-3">
+                        <label for="activateDescription" class="form-label">备注</label>
+                        <textarea class="form-control" id="activateDescription" rows="3" placeholder="请输入备注信息"></textarea>
+                    </div>
                 </form>
             </div>
             <div class="modal-footer">
@@ -218,6 +298,10 @@ let toastTimeout = null;
 document.addEventListener('DOMContentLoaded', function() {
     messageToast = new bootstrap.Toast(document.getElementById('messageToast'), {
         delay: 1500
+    });
+    // Store original content for all des-cells
+    document.querySelectorAll('.des-cell').forEach(cell => {
+        cell.dataset.originalContent = cell.innerText;
     });
 });
 
@@ -278,10 +362,17 @@ async function copyText(text, type, event) {
 
 function addRegistration() {
     const projectName = document.getElementById('projectName').value;
+    const projectDescription = document.getElementById('projectDescription').value;
+    const projectVersion = document.getElementById('projectVersion').value;
     const machineCode = document.getElementById('machineCode').value;
     
     if (!machineCode || machineCode.length !== 32) {
         showMessage('机器码必须是32位字符');
+        return;
+    }
+    
+    if (!projectDescription) {
+        showMessage('项目描述不能为空');
         return;
     }
     
@@ -292,6 +383,8 @@ function addRegistration() {
         },
         body: JSON.stringify({
             project_name: projectName,
+            description: projectDescription,
+            version: projectVersion,
             key: machineCode
         })
     })
@@ -320,6 +413,7 @@ function confirmActivation() {
     if (!currentKey) return;
     
     const days = parseInt(document.getElementById('activateDays').value);
+    const description = document.getElementById('activateDescription').value;
     
     fetch(`/admin/registration/${currentKey}/activate`, {
         method: 'POST',
@@ -327,7 +421,8 @@ function confirmActivation() {
             'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-            days: days
+            days: days,
+            description: description
         })
     })
     .then(response => response.json())
@@ -366,6 +461,44 @@ function deleteRegistration(key) {
     .catch(error => {
         console.error('Error:', error);
         showMessage('删除失败');
+    });
+}
+
+function updateDescription(element) {
+    if (element.dataset.modified !== 'true') return;
+    
+    const key = element.dataset.key;
+    const newDescription = element.innerText.trim();
+    
+    fetch(`/admin/registration/${key}/update`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            description: newDescription
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.error) {
+            showMessage(data.error);
+            element.innerText = element.dataset.originalContent;
+        } else {
+            showMessage('描述已更新');
+            element.dataset.modified = 'false';
+            element.dataset.originalContent = newDescription;
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showMessage('更新失败');
+        element.innerText = element.dataset.originalContent;
     });
 }
 </script>

@@ -5,7 +5,7 @@ from Crypto.Util.Padding import pad, unpad
 import base64
 import json
 from models import Registration, RegistrationStatus, Admin, APIKey, UserRole
-from database import db
+from database import db, migrate
 from routes.admin import admin_bp, login_required
 from routes.user_management import user_bp
 from config import Config
@@ -22,6 +22,7 @@ def create_app():
     
     # 初始化扩展
     db.init_app(app)
+    migrate.init_app(app, db)
     
     # 注册蓝图
     app.register_blueprint(admin_bp)
@@ -180,25 +181,23 @@ def register():
     请求参数：
     {
         "key": "32位机器码",
-        "project_name": "项目名称"
-    }
-    响应示例：
-    成功响应 (200):
-    {
-        "message": "注册成功，等待激活",
-        "data": "加密的响应数据"
-    }
-    错误响应 (400):
-    {
-        "error": "无效的密钥长度，需要32位密钥"
+        "name": "项目名称",
+        "description": "项目描述",
+        "version": "项目版本"
     }
     """
     try:
         data = request.get_json()
         key = data.get('key')
+        name = data.get('name', '')
+        description = data.get('description')
+        version = data.get('version', '1.0')
         
         if not key or len(key) != 32:
             return jsonify({'error': '无效的密钥长度，需要32位密钥'}), 400
+            
+        if not description:
+            return jsonify({'error': '项目描述不能为空'}), 400
         
         # 查找是否已存在该key的记录
         existing_registration = Registration.query.filter_by(key=key).first()
@@ -206,36 +205,56 @@ def register():
         if existing_registration:
             return jsonify({'error': '该密钥已注册'}), 400
         
-        # 生成5位随机编码
-        random_code = ''.join(secrets.choice('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ') for _ in range(5))
-        project_name = f"项目：{random_code}"
+        now = datetime.now()
         
         # 创建新记录，初始状态为未激活
         registration = Registration(
             key=key,
-            project_name=project_name,
-            register_time=datetime.now(),
-            expire_date=None,  # 初始无过期时间
-            last_modified=datetime.now(),
+            project_name=name,
+            description=description,
+            version=version,
+            register_time=now,
+            expire_date=None,
+            last_modified=now,
             status=RegistrationStatus.UNACTIVATED.value
         )
         
         db.session.add(registration)
         db.session.commit()
         
-        # 准备要加密的数据 - 使用完全相同的字符串格式
-        response_str = "{'project_name': '" + registration.project_name + "', 'register_time': '" + registration.register_time.strftime('%Y-%m-%d %H:%M:%S') + "', 'status': '" + registration.status + "', 'message': '注册成功，等待激活'}"
+        # 准备响应数据
+        response_data = {
+            'client': {
+                'machine_code': key,
+                'register_time': now.strftime('%Y-%m-%d %H:%M:%S'),
+                'last_check_time': now.strftime('%Y-%m-%d %H:%M:%S')
+            },
+            'project': {
+                'key': key,
+                'name': name,
+                'description': description,
+                'version': version
+            },
+            'license': {
+                'status': registration.status,
+                'type': 'unactivated',
+                'start_time': None,
+                'expire_time': None,
+                'features': []
+            }
+        }
         
-        # 使用配置的6位后缀替换机器码后6位
+        # 加密响应数据
         encryption_key = key[:-6] + current_app.config['ENCRYPTION_SUFFIX']
-        
-        # 加密数据
-        encoded_data = aes_encrypt(encryption_key, response_str)
+        encoded_data = aes_encrypt(encryption_key, json.dumps(response_data))
         
         return jsonify({
             'message': '注册成功，等待激活',
             'data': {
-                'encrypted_data': encoded_data
+                'encrypted_data': encoded_data,
+                'client': response_data['client'],
+                'project': response_data['project'],
+                'license': response_data['license']
             }
         }), 200
         
@@ -313,18 +332,6 @@ def activate():
         "key": "32位机器码",
         "days": 有效期天数（-1表示永久）
     }
-    响应示例：
-    成功响应 (200):
-    {
-        "message": "激活成功",
-        "data": {
-            "encrypted_data": "加密的响应数据"
-        }
-    }
-    错误响应 (404):
-    {
-        "error": "未找到注册信息"
-    }
     """
     try:
         data = request.get_json()
@@ -345,22 +352,39 @@ def activate():
             # 永久激活
             registration.status = RegistrationStatus.PERMANENT.value
             registration.expire_date = None
+            license_type = 'permanent'
         else:
             # 设置有效期
             registration.expire_date = now + timedelta(days=days)
             registration.status = RegistrationStatus.ACTIVATED.value
+            license_type = 'time_limited'
             
         registration.last_modified = now
         
-        # 准备要加密的数据 - 使用完全相同的字符串格式
-        expire_date = registration.expire_date.strftime('%Y-%m-%d %H:%M:%S') if registration.expire_date else 'permanent'
-        response_str = "{'project_name': '" + registration.project_name + "', 'status': '" + registration.status + "', 'expire_date': '" + expire_date + "', 'message': '激活成功'}"
+        response_data = {
+            'client': {
+                'machine_code': key,
+                'register_time': registration.register_time.strftime('%Y-%m-%d %H:%M:%S'),
+                'last_check_time': now.strftime('%Y-%m-%d %H:%M:%S')
+            },
+            'project': {
+                'key': key,
+                'name': registration.project_name,
+                'description': registration.description,
+                'version': registration.version
+            },
+            'license': {
+                'status': registration.status,
+                'type': license_type,
+                'start_time': now.strftime('%Y-%m-%d %H:%M:%S'),
+                'expire_time': registration.expire_date.strftime('%Y-%m-%d %H:%M:%S') if registration.expire_date else None,
+                'features': ['basic', 'premium']
+            }
+        }
         
-        # 使用配置的6位后缀替换机器码后6位
+        # 加密响应数据
         encryption_key = key[:-6] + current_app.config['ENCRYPTION_SUFFIX']
-        
-        # 加密数据
-        encoded_data = aes_encrypt(encryption_key, response_str)
+        encoded_data = aes_encrypt(encryption_key, json.dumps(response_data))
         
         # 保存激活码到数据库
         registration.activation_code = encoded_data
@@ -369,7 +393,10 @@ def activate():
         return jsonify({
             'message': '激活成功',
             'data': {
-                'encrypted_data': encoded_data
+                'encrypted_data': encoded_data,
+                'client': response_data['client'],
+                'project': response_data['project'],
+                'license': response_data['license']
             }
         }), 200
         
@@ -382,90 +409,154 @@ def verify():
     """验证机器码状态
     请求参数：
     {
-        "key": "32位机器码"
-    }
-    响应示例：
-    成功响应 (200):
-    {
-        "message": "验证成功",
-        "data": {
-            "encrypted_data": "加密的响应数据"
-        }
-    }
-    错误响应 (403):
-    {
-        "error": "注册未激活"
+        "key": "32位机器码",
+        "name": "项目名称（可选）",
+        "description": "项目描述（可选）"
     }
     """
     try:
         data = request.get_json()
         key = data.get('key')
+        name = data.get('name', f'Project_{key[:8]}')  # 如果未提供名称，使用机器码前8位生成
+        description = data.get('description', f'Auto generated project for {key}')  # 如果未提供描述，自动生成
         
         if not key:
             return jsonify({'error': '缺少密钥'}), 400
             
         registration = Registration.query.filter_by(key=key).first()
+        now = datetime.now()
         
         # 如果未找到注册信息，自动注册
         if not registration:
-            random_code = ''.join(secrets.choice('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ') for _ in range(5))
-            project_name = f"项目：{random_code}"
-            
             registration = Registration(
                 key=key,
-                project_name=project_name,
-                register_time=datetime.now(),
+                project_name=name,
+                description=description,
+                version='1.0',
+                register_time=now,
                 expire_date=None,
-                last_modified=datetime.now(),
+                last_modified=now,
                 status=RegistrationStatus.UNACTIVATED.value
             )
             
             db.session.add(registration)
             db.session.commit()
             
-            # 准备加密响应数据 - 使用完全相同的字符串格式
-            response_str = "{'project_name': '" + registration.project_name + "', 'register_time': '" + registration.register_time.strftime('%Y-%m-%d %H:%M:%S') + "', 'status': '" + registration.status + "', 'message': '未注册，已自动注册，等待激活'}"
+            response_data = {
+                'client': {
+                    'machine_code': key,
+                    'register_time': now.strftime('%Y-%m-%d %H:%M:%S'),
+                    'last_check_time': now.strftime('%Y-%m-%d %H:%M:%S')
+                },
+                'project': {
+                    'key': key,
+                    'name': name,
+                    'description': description,
+                    'version': '1.0'
+                },
+                'license': {
+                    'status': registration.status,
+                    'type': 'unactivated',
+                    'start_time': None,
+                    'expire_time': None,
+                    'features': []
+                }
+            }
             
             encryption_key = key[:-6] + current_app.config['ENCRYPTION_SUFFIX']
-            encoded_data = aes_encrypt(encryption_key, response_str)
+            encoded_data = aes_encrypt(encryption_key, json.dumps(response_data))
             
             return jsonify({
                 'message': '未注册，已自动注册，等待激活',
                 'data': {
-                    'encrypted_data': encoded_data
+                    'encrypted_data': encoded_data,
+                    'client': response_data['client'],
+                    'project': response_data['project'],
+                    'license': response_data['license']
                 }
             }), 200
             
-        if registration.status == RegistrationStatus.UNACTIVATED.value:
-            response_str = "{'project_name': '" + registration.project_name + "', 'register_time': '" + registration.register_time.strftime('%Y-%m-%d %H:%M:%S') + "', 'status': '" + registration.status + "', 'message': '已注册，等待激活'}"
-            
-            encryption_key = key[:-6] + current_app.config['ENCRYPTION_SUFFIX']
-            encoded_data = aes_encrypt(encryption_key, response_str)
-            
-            return jsonify({
-                'message': '已注册，等待激活',
-                'data': {
-                    'encrypted_data': encoded_data
-                }
-            }), 200
-            
+        # 更新项目信息（如果提供了新的信息）
+        if data.get('name'):
+            registration.project_name = name
+        if data.get('description'):
+            registration.description = description
+        registration.last_modified = now
+        
         # 检查是否过期（永久激活状态除外）
         if (registration.status != RegistrationStatus.PERMANENT.value and 
-            registration.expire_date and registration.expire_date < datetime.now()):
+            registration.expire_date and registration.expire_date < now):
             registration.status = RegistrationStatus.EXPIRED.value
             db.session.commit()
-            return jsonify({'error': '注册已过期'}), 403
             
-        expire_date = registration.expire_date.strftime('%Y-%m-%d %H:%M:%S') if registration.expire_date else 'permanent'
-        response_str = "{'project_name': '" + registration.project_name + "', 'status': '" + registration.status + "', 'expire_date': '" + expire_date + "', 'message': '验证成功'}"
+            response_data = {
+                'client': {
+                    'machine_code': key,
+                    'register_time': registration.register_time.strftime('%Y-%m-%d %H:%M:%S'),
+                    'last_check_time': now.strftime('%Y-%m-%d %H:%M:%S')
+                },
+                'project': {
+                    'key': key,
+                    'name': registration.project_name,
+                    'description': registration.description,
+                    'version': registration.version
+                },
+                'license': {
+                    'status': registration.status,
+                    'type': 'expired',
+                    'start_time': registration.register_time.strftime('%Y-%m-%d %H:%M:%S'),
+                    'expire_time': registration.expire_date.strftime('%Y-%m-%d %H:%M:%S'),
+                    'features': []
+                }
+            }
+            
+            encryption_key = key[:-6] + current_app.config['ENCRYPTION_SUFFIX']
+            encoded_data = aes_encrypt(encryption_key, json.dumps(response_data))
+            
+            return jsonify({
+                'message': '注册已过期',
+                'data': {
+                    'encrypted_data': encoded_data,
+                    'client': response_data['client'],
+                    'project': response_data['project'],
+                    'license': response_data['license']
+                }
+            }), 403
+            
+        # 正常响应
+        response_data = {
+            'client': {
+                'machine_code': key,
+                'register_time': registration.register_time.strftime('%Y-%m-%d %H:%M:%S'),
+                'last_check_time': now.strftime('%Y-%m-%d %H:%M:%S')
+            },
+            'project': {
+                'key': key,
+                'name': registration.project_name,
+                'description': registration.description,
+                'version': registration.version
+            },
+            'license': {
+                'status': registration.status,
+                'type': 'permanent' if registration.status == RegistrationStatus.PERMANENT.value else 'time_limited',
+                'start_time': registration.register_time.strftime('%Y-%m-%d %H:%M:%S'),
+                'expire_time': registration.expire_date.strftime('%Y-%m-%d %H:%M:%S') if registration.expire_date else None,
+                'features': ['basic', 'premium']
+            }
+        }
         
         encryption_key = key[:-6] + current_app.config['ENCRYPTION_SUFFIX']
-        encoded_data = aes_encrypt(encryption_key, response_str)
+        encoded_data = aes_encrypt(encryption_key, json.dumps(response_data))
+        
+        db.session.commit()
         
         return jsonify({
             'message': '验证成功',
             'data': {
-                'encrypted_data': encoded_data
+                'encrypted_data': encoded_data,
+                'client': response_data['client'],
+                'project': response_data['project'],
+                'license': response_data['license']
             }
         }), 200
         
@@ -521,30 +612,6 @@ def get_api_docs():
 def api_docs():
     api_routes = get_api_docs()
     return render_template('api_docs.html', api_routes=api_routes)
-
-def create_admin():
-    """创建默认管理员账号"""
-    if Admin.query.count() == 0:
-        # 生成16位随机密码
-        random_password = ''.join(secrets.choice('0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$%^&*()') for _ in range(16))
-        
-        admin = Admin(
-            username='admin',  # 默认用户名为 admin
-            email='admin@example.com',
-            role=UserRole.SUPER_ADMIN.value,
-            is_first_login=True  # 设置为首次登录
-        )
-        admin.set_password(random_password)
-        db.session.add(admin)
-        db.session.commit()
-        
-        # 在控制台显示初始密码
-        print("\n" + "="*50)
-        print("首次启动：系统已创建默认管理员账号")
-        print("用户名: admin")
-        print(f"临时密码: {random_password}")
-        print("请使用此临时密码登录并修改密码")
-        print("="*50 + "\n")
 
 @app.route('/forgot-password', methods=['GET', 'POST'])
 def forgot_password():
@@ -692,49 +759,6 @@ def crypto_tool():
             
     return render_template('crypto_tool.html')
 
-@app.route('/admin/login', methods=['GET', 'POST'])
-def admin_login():
-    if request.method == 'POST':
-        try:
-            data = request.get_json()
-            username = data.get('username', 'admin')  # 默认用户名为 admin
-            password = data.get('password')
-            
-            if not password:
-                return jsonify({'error': '请输入密码'}), 400
-            
-            # 尝试查找用户
-            admin = Admin.query.filter(
-                (Admin.username == username) | (Admin.email == username)
-            ).first()
-            
-            if not admin:
-                return jsonify({'error': '用户不存在'}), 401
-            
-            # 验证密码
-            if not admin.check_password(password):
-                return jsonify({'error': '密码错误'}), 401
-            
-            # 登录成功，设置session
-            session['admin_id'] = admin.id
-            session['password_version'] = admin.password_version
-            
-            if admin.is_first_login:
-                return jsonify({
-                    'redirect_url': url_for('change_password'),
-                    'message': '首次登录，请修改密码'
-                })
-            
-            return jsonify({
-                'redirect_url': url_for('admin.dashboard'),
-                'message': '登录成功'
-            })
-            
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
-    
-    return render_template('admin/login.html')
-
 @app.route('/admin/crypto/process', methods=['POST'])
 @login_required
 def process_crypto():
@@ -793,5 +817,4 @@ if __name__ == '__main__':
     # 启动应用
     with app.app_context():
         db.create_all()
-        create_admin()
     app.run(debug=True) 

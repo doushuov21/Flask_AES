@@ -14,11 +14,6 @@
     border-bottom: 1px solid #dee2e6;
     padding: 1rem;
 }
-.login-tip {
-    font-size: 0.9rem;
-    color: #6c757d;
-    margin-bottom: 1rem;
-}
 {% endblock %}
 
 {% block content %}
@@ -29,14 +24,6 @@
                 <h3 class="card-title mb-0">管理员登录</h3>
             </div>
             <div class="card-body">
-                <div class="alert alert-info mb-3">
-                    <h5>登录说明：</h5>
-                    <ul class="mb-0">
-                        <li>首次使用：直接输入任意密码，系统会返回临时密码</li>
-                        <li>已有账号：输入正确的密码即可登录</li>
-                    </ul>
-                </div>
-                
                 <div id="errorAlert" class="alert alert-danger" style="display: none;"></div>
                 
                 {% with messages = get_flashed_messages(with_categories=true) %}
@@ -51,36 +38,17 @@
                 
                 <form id="loginForm">
                     <div class="mb-3">
+                        <label for="username" class="form-label">用户名</label>
+                        <input type="text" class="form-control" id="username" name="username" required>
+                    </div>
+                    <div class="mb-3">
                         <label for="password" class="form-label">密码</label>
                         <input type="password" class="form-control" id="password" name="password" required>
-                        <div class="form-text">首次登录可输入任意密码，系统会返回临时密码</div>
                     </div>
-                    <button type="submit" class="btn btn-primary w-100">登录</button>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">登录</button>
+                    </div>
                 </form>
-                
-                <!-- 首次登录提示框 -->
-                <div class="modal fade" id="firstLoginModal" tabindex="-1">
-                    <div class="modal-dialog">
-                        <div class="modal-content">
-                            <div class="modal-header">
-                                <h5 class="modal-title">首次登录</h5>
-                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                            </div>
-                            <div class="modal-body">
-                                <p>这是您的临时密码，请妥善保管：</p>
-                                <div class="alert alert-info" id="tempPassword"></div>
-                                <p>请使用此临时密码重新登录系统。登录后，您需要：</p>
-                                <ol>
-                                    <li>设置新密码</li>
-                                </ol>
-                            </div>
-                            <div class="modal-footer">
-                                <button type="button" class="btn btn-primary" onclick="copyPassword()">复制密码</button>
-                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
             </div>
         </div>
     </div>
@@ -92,6 +60,7 @@
 document.getElementById('loginForm').addEventListener('submit', async function(e) {
     e.preventDefault();
     
+    const username = document.getElementById('username').value;
     const password = document.getElementById('password').value;
     const errorAlert = document.getElementById('errorAlert');
     
@@ -105,7 +74,7 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
                 'Accept': 'application/json'
             },
             body: JSON.stringify({
-                username: 'admin',  // 默认用户名
+                username: username,
                 password: password
             })
         });
@@ -122,11 +91,7 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
         
         const data = await response.json();
         
-        if (data.temp_password) {
-            // 显示首次登录模态框
-            document.getElementById('tempPassword').textContent = data.temp_password;
-            new bootstrap.Modal(document.getElementById('firstLoginModal')).show();
-        } else if (data.redirect_url) {
+        if (data.redirect_url) {
             window.location.href = data.redirect_url;
         }
     } catch (error) {
@@ -134,14 +99,5 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
         errorAlert.style.display = 'block';
     }
 });
-
-function copyPassword() {
-    const password = document.getElementById('tempPassword').textContent;
-    navigator.clipboard.writeText(password).then(() => {
-        alert('密码已复制到剪贴板');
-    }).catch(err => {
-        alert('复制失败: ' + err);
-    });
-}
 </script>
 {% endblock %} 
