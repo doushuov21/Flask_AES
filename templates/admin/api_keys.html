@@ -103,7 +103,7 @@
                                         <div class="code-cell me-2">
                                             {{ key.key }}
                                         </div>
-                                        <button class="btn btn-sm btn-outline-secondary" onclick="copyText('{{ key.key }}', 'API密钥')">
+                                        <button class="btn btn-sm btn-outline-secondary" onclick="copyText('{{ key.key }}')">
                                             <i class="fas fa-copy"></i>
                                         </button>
                                     </div>
@@ -207,17 +207,17 @@ function showMessage(message, event) {
 }
 
 // 复制文本
-async function copyText(text, type, event) {
+async function copyText(text) {
     if (!text) {
-        showMessage(`没有可复制的${type}`);
+        showMessage('没有可复制的文本');
         return;
     }
     
     try {
         await navigator.clipboard.writeText(text);
-        showMessage(`${type}已复制到剪贴板`, event);
+        showMessage('文本已复制到剪贴板');
     } catch (err) {
-        showMessage(`复制${type}失败`, event);
+        showMessage('复制文本失败');
         console.error('复制失败:', err);
     }
 }
